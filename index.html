@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel de Controle de Licenças — SaaS 30 Dias</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./admin.css" />
+</head>
+<body>
+  <!-- Ambient background glow -->
+  <div class="glow-orb orb-1"></div>
+  <div class="glow-orb orb-2"></div>
+
+  <!-- ==========================================
+       TELA DE LOGIN / SENHA MESTRA
+       ========================================== -->
+  <div id="loginScreen" class="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-icon">
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </div>
+      <h2 class="auth-title">Painel de Administração</h2>
+      <p class="auth-subtitle">Gestão de Licenças e Assinaturas Comerciais (30 Dias)</p>
+
+      <form id="loginForm" class="auth-form" onsubmit="return false;">
+        <div class="form-group">
+          <label for="adminPassword">Senha Mestra de Acesso</label>
+          <input type="password" id="adminPassword" placeholder="Digite sua senha de administrador" autocomplete="current-password" autofocus />
+        </div>
+        <button type="submit" id="btnLogin" class="btn btn-primary btn-block">
+          <span>Acessar Painel</span>
+          <span class="btn-spinner" id="loginSpinner" style="display:none;"></span>
+        </button>
+      </form>
+      <div id="loginError" class="auth-error" style="display:none;"></div>
+      <div class="auth-hint">🔒 Acesso restrito ao proprietário do sistema financeiro.</div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       PAINEL PRINCIPAL (APÓS AUTENTICAÇÃO)
+       ========================================== -->
+  <div id="mainDashboard" class="dashboard-wrap" style="display:none;">
+    <!-- Top Navigation Bar -->
+    <header class="topbar">
+      <div class="topbar-brand">
+        <div class="brand-badge">PRO</div>
+        <div>
+          <h1 class="brand-title">Gestão de Assinaturas</h1>
+          <span class="brand-sub">Servidor Supabase Cloud • Controle Financeiro</span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <div id="connectionStatusBadge" class="connection-pill checking">
+          <span class="status-dot"></span>
+          <span id="connectionStatusText">Conectando...</span>
+        </div>
+        <button id="btnOpenConfigModal" class="btn btn-ghost" title="Configurações de Conexão Supabase">
+          ⚙️ Conexão Supabase
+        </button>
+        <button id="btnOpenNewLicenseModal" class="btn btn-primary">
+          ✨ + Novo Código (30 Dias)
+        </button>
+        <button id="btnLogout" class="btn btn-danger-ghost" title="Encerrar Sessão">
+          Sair
+        </button>
+      </div>
+    </header>
+
+    <!-- Content Area -->
+    <main class="content-container">
+      <!-- KPI Stats Grid -->
+      <section class="kpi-grid">
+        <div class="kpi-card" data-filter="ALL">
+          <div class="kpi-header">
+            <span class="kpi-label">TOTAL DE CLIENTES</span>
+            <span class="kpi-icon">👥</span>
+          </div>
+          <div class="kpi-value" id="kpiTotal">0</div>
+          <div class="kpi-desc">Licenças cadastradas no sistema</div>
+        </div>
+
+        <div class="kpi-card active-card" data-filter="ACTIVE">
+          <div class="kpi-header">
+            <span class="kpi-label">ASSINATURAS ATIVAS</span>
+            <span class="kpi-icon">🟢</span>
+          </div>
+          <div class="kpi-value text-emerald" id="kpiActive">0</div>
+          <div class="kpi-desc">Em dia e com acesso liberado</div>
+        </div>
+
+        <div class="kpi-card expiring-card" data-filter="EXPIRING">
+          <div class="kpi-header">
+            <span class="kpi-label">A VENCER (&le; 5 DIAS)</span>
+            <span class="kpi-icon">⚠️</span>
+          </div>
+          <div class="kpi-value text-amber" id="kpiExpiring">0</div>
+          <div class="kpi-desc">Cobrança de mensalidade próxima</div>
+        </div>
+
+        <div class="kpi-card expired-card" data-filter="EXPIRED">
+          <div class="kpi-header">
+            <span class="kpi-label">VENCIDAS / BLOQUEADAS</span>
+            <span class="kpi-icon">🔴</span>
+          </div>
+          <div class="kpi-value text-rose" id="kpiExpired">0</div>
+          <div class="kpi-desc">Acesso expirado ou suspenso</div>
+        </div>
+      </section>
+
+      <!-- Action & Filter Bar -->
+      <section class="toolbar">
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="searchInput" placeholder="Pesquisar por cliente, título ou código de ativação..." />
+          <button id="btnClearSearch" class="btn-clear" style="display:none;">✕</button>
+        </div>
+
+        <div class="filter-pills">
+          <button class="pill-btn active" data-filter="ALL">Todas (<span id="countAll">0</span>)</button>
+          <button class="pill-btn" data-filter="ACTIVE">Ativas (<span id="countActive">0</span>)</button>
+          <button class="pill-btn" data-filter="PENDING">Pendentes (<span id="countPending">0</span>)</button>
+          <button class="pill-btn" data-filter="EXPIRING">A Vencer (<span id="countExpiring">0</span>)</button>
+          <button class="pill-btn" data-filter="EXPIRED">Vencidas (<span id="countExpired">0</span>)</button>
+          <button class="pill-btn" data-filter="SUSPENDED">Bloqueadas (<span id="countSuspended">0</span>)</button>
+        </div>
+
+        <div class="toolbar-right">
+          <button id="btnRefreshList" class="btn btn-ghost" title="Recarregar do Supabase">
+            🔄 Atualizar
+          </button>
+        </div>
+      </section>
+
+      <!-- Licenses Table Section -->
+      <section class="table-card">
+        <div class="table-responsive">
+          <table class="licenses-table">
+            <thead>
+              <tr>
+                <th>CLIENTE / APLICATIVO</th>
+                <th>CÓDIGO DE ATIVAÇÃO</th>
+                <th>STATUS</th>
+                <th>VALIDADE & CONTAGEM (30 DIAS)</th>
+                <th>DISPOSITIVO VINCULADO</th>
+                <th style="text-align: right;">AÇÕES RÁPIDAS</th>
+              </tr>
+            </thead>
+            <tbody id="licensesTableBody">
+              <tr>
+                <td colspan="6" class="table-loading">
+                  <div class="spinner"></div>
+                  <div>Carregando assinaturas do servidor...</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ==========================================
+       MODAL: CRIAR NOVO CÓDIGO DE ATIVAÇÃO
+       ========================================== -->
+  <div id="modalNewLicense" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-badge">30 DIAS</div>
+          <h3>Gerar Novo Código de Ativação</h3>
+        </div>
+        <button class="modal-close" id="btnCloseNewModal">✕</button>
+      </div>
+
+      <form id="formNewLicense" onsubmit="return false;">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="newClientName">Nome do Cliente <span class="req">*</span></label>
+            <input type="text" id="newClientName" placeholder="Ex: Rogério Silva, Padaria Pão Doce, Mecânica Express" required autofocus />
+          </div>
+
+          <div class="form-group">
+            <label for="newAppTitle">Título no Aplicativo (White-Label)</label>
+            <input type="text" id="newAppTitle" placeholder="Padrão: Controle Financeiro" value="Controle Financeiro" />
+          </div>
+
+          <div class="form-group">
+            <label for="newDurationDays">Período de Assinatura</label>
+            <select id="newDurationDays">
+              <option value="30" selected>30 Dias (Plano Mensal Padrão)</option>
+              <option value="15">15 Dias (Teste Estendido)</option>
+              <option value="60">60 Dias (Bimestral)</option>
+              <option value="90">90 Dias (Trimestral)</option>
+              <option value="180">180 Dias (Semestral)</option>
+              <option value="365">365 Dias (Anual)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="newLicenseKey">
+              <span>Código Gerado</span>
+              <button type="button" id="btnRegenerateKey" class="link-btn">🎲 Gerar Outro</button>
+            </label>
+            <div class="key-field-wrap">
+              <input type="text" id="newLicenseKey" class="key-input-highlight" readonly />
+              <button type="button" id="btnCopyGeneratedKey" class="btn-copy-small" title="Copiar Chave">
+                📋 Copiar
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group full-width">
+            <label for="newNotes">Observações / Anotações Internas</label>
+            <input type="text" id="newNotes" placeholder="Ex: Pagou via PIX no dia 12/10, WhatsApp (11) 99999-9999..." />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="btnCancelNewModal">Cancelar</button>
+          <button type="submit" id="btnSubmitNewLicense" class="btn btn-primary">
+            <span>💾 Criar e Liberar Código</span>
+            <span class="btn-spinner" id="newSpinner" style="display:none;"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL: CONFIGURAÇÃO SUPABASE
+       ========================================== -->
+  <div id="modalConfig" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-badge-blue">CONEXÃO</div>
+          <h3>Configuração do Servidor Supabase</h3>
+        </div>
+        <button class="modal-close" id="btnCloseConfigModal">✕</button>
+      </div>
+
+      <form id="formConfig" onsubmit="return false;">
+        <div class="form-group">
+          <label for="cfgSupabaseUrl">Supabase Project URL <span class="req">*</span></label>
+          <input type="text" id="cfgSupabaseUrl" placeholder="https://xxxxxxxx.supabase.co" required />
+          <span class="form-hint">Obtido em: Project Settings &rarr; API &rarr; Project URL</span>
+        </div>
+
+        <div class="form-group">
+          <label for="cfgSupabaseAnonKey">Supabase Anon / Public Key <span class="req">*</span></label>
+          <textarea id="cfgSupabaseAnonKey" rows="3" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." required></textarea>
+          <span class="form-hint">Obtido em: Project Settings &rarr; API &rarr; Project API keys (anon public)</span>
+        </div>
+
+        <div class="form-group">
+          <label for="cfgAdminPassword">Alterar Senha Mestra do Painel</label>
+          <input type="password" id="cfgAdminPassword" placeholder="Deixe em branco para manter a senha atual" />
+          <span class="form-hint">Senha necessária para entrar neste painel de administração.</span>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="btnTestSupabaseConnection" class="btn btn-ghost">
+            🔌 Testar Conexão
+          </button>
+          <button type="submit" id="btnSaveConfig" class="btn btn-primary">
+            Salvar Configurações
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toasts Notification Wrap -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="./admin.js"></script>
+</body>
+</html>
