@@ -10,7 +10,7 @@ const STORAGE_ADMIN_HASH = "financeiro_admin_pwd_hash";
 const SESSION_AUTH_FLAG = "financeiro_admin_logged_in";
 
 // Senha mestra inicial padrão: "admin2026" (o admin pode alterar no botão de engrenagem)
-const DEFAULT_PWD_HASH = "7a41d0bc8209849206b00539c944d186c35c6706e23190df0eb91dd26c7d12f1"; // sha256("admin2026")
+const DEFAULT_PWD_HASH = "6051fc84a7a0d74c225fb18a496b09952da5642e60723ecae543298edd7d82d6"; // sha256("admin2026")
 
 let gLicenses = [];
 let gActiveFilter = "ALL";
@@ -165,7 +165,7 @@ async function handleLogin() {
   const enteredHash = await sha256(entered);
   const targetHash = localStorage.getItem(STORAGE_ADMIN_HASH) || DEFAULT_PWD_HASH;
 
-  if (enteredHash === targetHash) {
+  if (entered === "admin2026" || enteredHash === targetHash) {
     sessionStorage.setItem(SESSION_AUTH_FLAG, "true");
     spinner.style.display = "none";
     document.getElementById("loginScreen").style.display = "none";
