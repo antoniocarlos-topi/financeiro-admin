@@ -1,0 +1,32 @@
+name: Supabase Free Tier Keep-Alive
+
+on:
+  schedule:
+    # Executa automaticamente todos os dias às 08:00 UTC (05:00 Horário de Brasília)
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Permite disparar manualmente pelo botão "Run workflow" no GitHub
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase API (Impede auto-pausa de inatividade de 7 dias)
+        run: |
+          echo "Realizando ping preventivo no Supabase para manter o banco sempre ativo..."
+          # Altere para a URL e anon key do seu projeto se desejar, ou configure em GitHub Secrets
+          # Se configurado em Secrets do repositório: SUPABASE_URL e SUPABASE_ANON_KEY
+          URL="${{ secrets.SUPABASE_URL }}"
+          KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+          
+          if [ -z "$URL" ]; then
+            echo "Secrets não configurados ainda. Adicione SUPABASE_URL e SUPABASE_ANON_KEY nas configurações do repositório (Settings -> Secrets and variables -> Actions)."
+            exit 0
+          fi
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" "$URL/rest/v1/licenses?select=count")
+          echo "Supabase respondeu com status HTTP: $STATUS"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 300 ]; then
+            echo "✅ Supabase verificado e ativo com sucesso! O temporizador de pausa foi reiniciado."
+          else
+            echo "⚠️ Alerta: Supabase respondeu com status $STATUS."
+          fi
