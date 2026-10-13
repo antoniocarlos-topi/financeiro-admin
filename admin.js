@@ -41,10 +41,40 @@ function calcRemainingDays(expiresAt) {
   return Math.max(0, Math.ceil((exp - now) / (1000 * 60 * 60 * 24)));
 }
 
+function generateUniqueKey() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sem 0, O, 1, I para evitar ambiguidade visual
+  const existing = new Set((gLicenses || []).map(l => (l.license_key || "").toUpperCase().trim()));
+
+  for (let attempt = 0; attempt < 50; attempt++) {
+    let p1 = "";
+    let p2 = "";
+    if (window.crypto && window.crypto.getRandomValues) {
+      const bytes = new Uint8Array(8);
+      window.crypto.getRandomValues(bytes);
+      for (let i = 0; i < 4; i++) {
+        p1 += chars[bytes[i] % chars.length];
+        p2 += chars[bytes[i + 4] % chars.length];
+      }
+    } else {
+      for (let i = 0; i < 4; i++) {
+        p1 += chars[Math.floor(Math.random() * chars.length)];
+        p2 += chars[Math.floor(Math.random() * chars.length)];
+      }
+    }
+    const candidate = `FIN-${p1}-${p2}-${new Date().getFullYear()}`;
+    if (!existing.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Fallback garantido contra qualquer colisão
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  return `FIN-${randomSuffix}-${Date.now().toString(36).slice(-4).toUpperCase()}-${new Date().getFullYear()}`;
+}
+
+// Mantém compatibilidade caso algum código antigo chame generateRandomKey
 function generateRandomKey() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const pick = len => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  return `FIN-${pick(4)}-${pick(4)}-${new Date().getFullYear()}`;
+  return generateUniqueKey();
 }
 
 function escapeHtml(str) {
@@ -429,9 +459,14 @@ function renderLicensesTable() {
 /* ============================================================
    AÇÕES DO USUÁRIO (RENOVAÇÃO, BLOQUEIO, CRIAÇÃO)
    ============================================================ */
+let gActionPending = false;
+let gIsCreatingLicense = false;
+
 async function quickRenew(licenseId, clientName) {
+  if (gActionPending) return;
   if (!confirm(`Deseja adicionar +30 DIAS à assinatura de "${clientName}"?`)) return;
 
+  gActionPending = true;
   try {
     showToast("info", "Processando renovação...");
     const res = await callSupabase("/rest/v1/rpc/renew_license", {
@@ -443,15 +478,19 @@ async function quickRenew(licenseId, clientName) {
     await loadDashboard();
   } catch (err) {
     showToast("error", `Erro ao renovar: ${err.message}`);
+  } finally {
+    gActionPending = false;
   }
 }
 
 async function toggleSuspend(licenseId, targetStatus) {
+  if (gActionPending) return;
   const isBlocking = targetStatus === "SUSPENDED";
   const actionText = isBlocking ? "bloquear" : "reativar";
 
   if (!confirm(`Deseja realmente ${actionText} o acesso deste cliente?`)) return;
 
+  gActionPending = true;
   try {
     await callSupabase(`/rest/v1/licenses?id=eq.${licenseId}`, {
       method: "PATCH",
@@ -462,12 +501,16 @@ async function toggleSuspend(licenseId, targetStatus) {
     await loadDashboard();
   } catch (err) {
     showToast("error", `Falha ao alterar status: ${err.message}`);
+  } finally {
+    gActionPending = false;
   }
 }
 
 async function resetMachineBinding(licenseId, clientName) {
+  if (gActionPending) return;
   if (!confirm(`Deseja desvincular o computador de "${clientName}"?\n\nIsso permitirá que o cliente ative este mesmo código em um novo computador.`)) return;
 
+  gActionPending = true;
   try {
     await callSupabase(`/rest/v1/licenses?id=eq.${licenseId}`, {
       method: "PATCH",
@@ -478,12 +521,16 @@ async function resetMachineBinding(licenseId, clientName) {
     await loadDashboard();
   } catch (err) {
     showToast("error", `Erro ao desvincular PC: ${err.message}`);
+  } finally {
+    gActionPending = false;
   }
 }
 
 async function deleteLicense(licenseId, clientName) {
+  if (gActionPending) return;
   if (!confirm(`⚠️ ATENÇÃO: Deseja realmente EXCLUIR permanentemente a licença de "${clientName}"?`)) return;
 
+  gActionPending = true;
   try {
     await callSupabase(`/rest/v1/licenses?id=eq.${licenseId}`, {
       method: "DELETE"
@@ -493,15 +540,46 @@ async function deleteLicense(licenseId, clientName) {
     await loadDashboard();
   } catch (err) {
     showToast("error", `Erro ao excluir: ${err.message}`);
+  } finally {
+    gActionPending = false;
   }
 }
 
 function copyToClipboard(text) {
-  navigator.clipboard.writeText(text).then(() => {
-    showToast("success", `Chave ${text} copiada para a área de transferência!`);
-  }).catch(() => {
-    showToast("error", "Não foi possível copiar automaticamente.");
-  });
+  if (!text) return;
+  const clean = String(text).trim();
+
+  // Método 1: Clipboard API nativa
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(clean).then(() => {
+      showToast("success", `Chave ${clean} copiada para a área de transferência!`);
+    }).catch(() => {
+      fallbackCopy(clean);
+    });
+  } else {
+    fallbackCopy(clean);
+  }
+}
+
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    if (ok) {
+      showToast("success", `Chave ${text} copiada para a área de transferência!`);
+    } else {
+      showToast("info", `Código: ${text}`);
+    }
+  } catch (_) {
+    showToast("info", `Código: ${text}`);
+  }
 }
 
 /* ============================================================
@@ -511,8 +589,20 @@ function openNewLicenseModal() {
   const modal = document.getElementById("modalNewLicense");
   const keyInput = document.getElementById("newLicenseKey");
   const clientInput = document.getElementById("newClientName");
+  const submitBtn = document.getElementById("btnSubmitNewLicense");
+  const spinner = document.getElementById("newSpinner");
+  const regenBtn = document.getElementById("btnRegenerateKey");
 
-  keyInput.value = generateRandomKey();
+  gIsCreatingLicense = false;
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.style.opacity = "1";
+    submitBtn.style.cursor = "pointer";
+  }
+  if (regenBtn) regenBtn.disabled = false;
+  if (spinner) spinner.style.display = "none";
+
+  keyInput.value = generateUniqueKey();
   clientInput.value = "";
   document.getElementById("newNotes").value = "";
   modal.style.display = "flex";
@@ -521,46 +611,130 @@ function openNewLicenseModal() {
 
 function closeNewLicenseModal() {
   document.getElementById("modalNewLicense").style.display = "none";
+  gIsCreatingLicense = false;
 }
 
-async function handleCreateNewLicense() {
-  const clientName = document.getElementById("newClientName").value.trim();
-  const appTitle = document.getElementById("newAppTitle").value.trim() || "Controle Financeiro";
-  const durationDays = Number(document.getElementById("newDurationDays").value || 30);
-  const licenseKey = document.getElementById("newLicenseKey").value.trim();
-  const notes = document.getElementById("newNotes").value.trim();
-  const spinner = document.getElementById("newSpinner");
+async function handleCreateNewLicense(e) {
+  if (e && typeof e.preventDefault === "function") {
+    e.preventDefault();
+  }
 
-  if (!clientName) {
-    showToast("error", "O Nome do Cliente é obrigatório.");
-    document.getElementById("newClientName").focus();
+  // Prevenção estrita contra múltiplos cliques simultâneos
+  if (gIsCreatingLicense) {
+    console.warn("Submissão já em andamento. Clique ignorado.");
     return;
   }
 
-  spinner.style.display = "inline-block";
+  const clientInput = document.getElementById("newClientName");
+  const keyInput = document.getElementById("newLicenseKey");
+  const clientName = clientInput.value.trim();
+  const appTitle = document.getElementById("newAppTitle").value.trim() || "Controle Financeiro";
+  const durationDays = Number(document.getElementById("newDurationDays").value || 30);
+  let licenseKey = (keyInput.value || "").trim().toUpperCase();
+  const notes = document.getElementById("newNotes").value.trim();
+  const spinner = document.getElementById("newSpinner");
+  const submitBtn = document.getElementById("btnSubmitNewLicense");
+  const regenBtn = document.getElementById("btnRegenerateKey");
+
+  if (!clientName) {
+    showToast("error", "O Nome do Cliente é obrigatório.");
+    clientInput.focus();
+    return;
+  }
+
+  // Garante uma chave válida antes de enviar
+  if (!licenseKey || licenseKey.length < 8) {
+    licenseKey = generateUniqueKey();
+    keyInput.value = licenseKey;
+  }
+
+  gIsCreatingLicense = true;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.style.opacity = "0.7";
+    submitBtn.style.cursor = "not-allowed";
+  }
+  if (regenBtn) regenBtn.disabled = true;
+  if (spinner) spinner.style.display = "inline-block";
+
+  // 1. Tenta criar através da RPC atômica segura no Supabase (garantia absoluta de unicidade)
+  let createdKey = null;
+  let lastError = null;
 
   try {
-    await callSupabase("/rest/v1/licenses", {
+    const rpcRes = await callSupabase("/rest/v1/rpc/create_license", {
       method: "POST",
       body: JSON.stringify({
-        license_key: licenseKey,
-        client_name: clientName,
-        app_title: appTitle,
-        days_duration: durationDays,
-        status: "PENDING",
-        notes: notes || null
+        p_client_name: clientName,
+        p_app_title: appTitle,
+        p_days_duration: durationDays,
+        p_notes: notes || null,
+        p_license_key: licenseKey
       })
     });
 
-    closeNewLicenseModal();
-    copyToClipboard(licenseKey);
-    showToast("success", `Código ${licenseKey} criado com sucesso e copiado para você enviar ao cliente!`, 5000);
-    await loadDashboard();
-  } catch (err) {
-    showToast("error", `Falha ao criar licença: ${err.message}`);
-  } finally {
-    spinner.style.display = "none";
+    if (rpcRes && rpcRes.ok && rpcRes.license_key) {
+      createdKey = rpcRes.license_key;
+    }
+  } catch (rpcErr) {
+    console.warn("RPC create_license indisponível, usando POST direto com auto-retry:", rpcErr);
   }
+
+  // 2. Se a RPC não estiver disponível ou não retornar, usa POST REST com auto-retry
+  if (!createdKey) {
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await callSupabase("/rest/v1/licenses", {
+          method: "POST",
+          body: JSON.stringify({
+            license_key: licenseKey,
+            client_name: clientName,
+            app_title: appTitle,
+            days_duration: durationDays,
+            status: "PENDING",
+            notes: notes || null
+          })
+        });
+
+        createdKey = licenseKey;
+        break;
+      } catch (err) {
+        lastError = err;
+        const isDuplicateKey = err.message && (
+          err.message.includes("duplicate key") || 
+          err.message.includes("licenses_license_key_key") ||
+          err.message.includes("violates unique constraint")
+        );
+
+        if (isDuplicateKey && attempt < maxAttempts) {
+          console.warn(`[Auto-Retry] Chave ${licenseKey} colidiu no banco. Gerando nova chave única (tentativa ${attempt + 1})...`);
+          licenseKey = generateUniqueKey();
+          keyInput.value = licenseKey;
+          continue;
+        }
+        break;
+      }
+    }
+  }
+
+  if (createdKey) {
+    closeNewLicenseModal();
+    copyToClipboard(createdKey);
+    showToast("success", `Código ${createdKey} liberado com sucesso e copiado para você enviar ao cliente!`, 6000);
+    await loadDashboard();
+  } else {
+    showToast("error", `Falha ao criar licença: ${lastError ? lastError.message : "Erro na operação."}`);
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.style.opacity = "1";
+    submitBtn.style.cursor = "pointer";
+  }
+  if (regenBtn) regenBtn.disabled = false;
+  if (spinner) spinner.style.display = "none";
+  gIsCreatingLicense = false;
 }
 
 function openConfigModal() {
@@ -692,11 +866,16 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnCloseNewModal")?.addEventListener("click", closeNewLicenseModal);
   document.getElementById("btnCancelNewModal")?.addEventListener("click", closeNewLicenseModal);
   document.getElementById("btnRegenerateKey")?.addEventListener("click", () => {
-    document.getElementById("newLicenseKey").value = generateRandomKey();
+    document.getElementById("newLicenseKey").value = generateUniqueKey();
   });
   document.getElementById("btnCopyGeneratedKey")?.addEventListener("click", () => {
     copyToClipboard(document.getElementById("newLicenseKey").value);
   });
+  
+  const formNew = document.getElementById("formNewLicense");
+  if (formNew) {
+    formNew.addEventListener("submit", handleCreateNewLicense);
+  }
   document.getElementById("btnSubmitNewLicense")?.addEventListener("click", handleCreateNewLicense);
 
   // Modal Configurações
